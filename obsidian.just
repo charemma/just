@@ -23,10 +23,22 @@ find id:
     printf '%s\n' "$matches"
 
 # Extract a frontmatter field from a note (by id). Prints the value or empty.
+# Note: inlines `find` logic to avoid re-invoking `just` (the recipe runs from
+# a nix store path when consumed via flake input -- no justfile in cwd there).
 extract id field:
     #!/usr/bin/env bash
     set -euo pipefail
-    path=$(just obsidian::find {{ id }})
+    matches=$(grep -lr "^id: {{ id }}\$" "{{ _notes_root }}" 2>/dev/null || true)
+    if [[ -z "$matches" ]]; then
+        echo "ABORT: keine Notiz mit id={{ id }} in {{ _notes_root }}" >&2
+        exit 1
+    fi
+    count=$(printf '%s\n' "$matches" | wc -l)
+    if [[ "$count" -gt 1 ]]; then
+        echo "ABORT: mehrere Treffer fuer id={{ id }} -- Slug muss eindeutig sein:" >&2
+        echo "$matches" >&2
+        exit 1
+    fi
     awk -v field="{{ field }}" '
         BEGIN { in_fm = 0 }
         /^---$/ { in_fm = !in_fm; if (in_fm == 0 && NR > 1) exit; next }
@@ -36,4 +48,4 @@ extract id field:
             print
             exit
         }
-    ' "$path"
+    ' "$matches"
